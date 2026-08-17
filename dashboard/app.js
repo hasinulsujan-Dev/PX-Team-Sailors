@@ -18,10 +18,48 @@ const state = {
   to: MONTHS.length - 1,
   empKey: null,
   selected: [],
+  perFrom: 0,
+  perTo: MONTHS.length - 1,
+  perCriteria: "",
+  perMember: "",
 };
 
 const visibleMonths = () =>
   MONTHS.slice(state.from, Math.min(state.to + 1, MONTHS.length));
+
+let tipEl = null;
+function getTip() {
+  if (!tipEl) {
+    let el = document.getElementById("ov-tip");
+    if (!el && document.createElement) el = document.createElement("div");
+    if (el) {
+      el.id = "ov-tip";
+      el.hidden = true;
+      if (document.body && document.body.appendChild) document.body.appendChild(el);
+      tipEl = el;
+    }
+  }
+  return tipEl;
+}
+function showTip(cell) {
+  const tip = getTip();
+  if (!tip) return;
+  tip.innerHTML = cell.dataset.tip || "";
+  tip.hidden = false;
+  const r = typeof cell.getBoundingClientRect === "function" ? cell.getBoundingClientRect() : null;
+  if (r) {
+    const th = tip.offsetHeight || 120;
+    const vw = document.body && document.body.clientWidth ? document.body.clientWidth : 1200;
+    const left = Math.min(Math.max(8, r.left + r.width / 2 - 150), Math.max(8, vw - 328));
+    const top = r.top - th - 10 > 0 ? r.top - th - 10 : r.bottom + 10;
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+}
+function hideTip() {
+  const tip = getTip();
+  if (tip) tip.hidden = true;
+}
 
 function flaggedEntries(month) {
   const out = [];
@@ -97,34 +135,54 @@ function renderMonth(month) {
       `<div class="stat-hint">${delta > 0 ? "more" : "fewer"} flagged records (${pct >= 0 ? "+" : ""}${pct}%)</div></div>`;
   }
 
-  const cards = month.criteria
+  const sections = month.criteria
     .map((c) => {
-      const entries = c.entries.filter((e) => e.type !== "text");
+      const entries = c.entries
+        .filter((e) => e.type !== "text")
+        .slice()
+        .sort((a, b) => (b.num || 0) - (a.num || 0) || a.name.localeCompare(b.name));
       const texts = c.entries.filter((e) => e.type === "text");
       const empty = entries.length === 0 && texts.length === 0;
 
       const link = c.sheet && c.sheet.startsWith("http")
         ? `<a class="sheet-link" href="${esc(c.sheet)}" target="_blank" rel="noopener">Open sheet \u2197</a>`
         : "";
+      const resp = c.responsibility ? `<span class="resp">${esc(c.responsibility)}</span>` : "";
+      const meta = [resp, link].filter(Boolean).join('<span class="sep">\u00b7</span>');
 
       let body = "";
-      if (!empty) {
-        if (entries.length) body += `<div class="chips">${entries.map(chipHtml).join("")}</div>`;
+      if (empty) {
+        body = `<div class="empty-note">Nothing reported</div>`;
+      } else {
+        const rows = entries
+          .map((e, i) => {
+            const cls = e.type === "time" ? "val-time" : e.type === "percent" ? "val-percent" : "val-flag";
+            const suffix = e.type === "count" ? "\u00d7" : "";
+            const badge = i === 0 ? `<span class="top-badge">top</span>` : "";
+            return `<tr class="${i === 0 ? "top-row" : ""}">
+              <td class="name-cell">${badge}<button class="name-link" data-view="${esc(normName(e.name))}">${esc(e.name)}</button></td>
+              <td><span class="val-cell ${cls}">${esc(e.value)}${suffix}</span></td>
+            </tr>`;
+          })
+          .join("");
+        body = `<div class="heat-wrap">
+            <table class="heat cmp-table">
+              <thead><tr><th>Member</th><th>Value</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`;
         if (texts.length) {
           body += `<div class="notes">${texts
             .map((t) => `<div class="note">${esc(t.name)}</div>`)
             .join("")}${c.mail_subject ? `<div class="note-subject">Mail subject: ${esc(c.mail_subject)}</div>` : ""}</div>`;
         }
-      } else {
-        body = `<div class="empty-note">Nothing reported</div>`;
       }
 
-      return `<div class="card ${empty ? "empty" : ""}">
-        <div class="card-head">
-          <span class="card-title">${esc(c.name)}</span>
-          <span class="resp">${esc(c.responsibility)}</span>
+      return `<div class="panel crit-panel">
+        <div class="crit-head">
+          <div class="crit-title">${esc(c.name)}</div>
+          <div class="crit-meta">${meta}</div>
         </div>
-        ${link ? `<div>${link}</div>` : ""}
         ${body}
       </div>`;
     })
@@ -149,7 +207,13 @@ function renderMonth(month) {
       </div>
       ${changeHtml}
     </div>
-    <div class="cards">${cards}</div>`;
+    <div class="ov-section">
+      <div class="ov-section-head">
+        <h2>Criteria &mdash; ${esc(month.label)}</h2>
+        <p>Criteria follow the CSV rows in order. Within each, members run from highest to lowest.</p>
+      </div>
+      ${sections}
+    </div>`;
 }
 
 /* ---------- Overview ---------- */
@@ -169,30 +233,6 @@ function renderOverview() {
         <div class="trend-label">${esc(shortMonth(p.month))}</div>
       </div>`;
     })
-    .join("");
-
-  const empCounts = new Map();
-  perMonth.forEach((p) =>
-    p.flags.forEach((f) => {
-      if (f.entry.type !== "count") return;
-      const key = normName(f.entry.name);
-      if (!empCounts.has(key)) empCounts.set(key, { name: f.entry.name, total: 0 });
-      const rec = empCounts.get(key);
-      rec.total += f.entry.num || 0;
-      rec.name = f.entry.name.length > rec.name.length ? f.entry.name : rec.name;
-    })
-  );
-  const top = [...empCounts.values()].sort((a, b) => b.total - a.total).slice(0, 12);
-  const maxEmp = Math.max(...top.map((t) => t.total), 1);
-
-  const empBars = top
-    .map(
-      (t, i) => `<div class="bar-row">
-        <div class="bar-label" title="${esc(t.name)}">${esc(t.name)}</div>
-        <div class="bar-track"><div class="bar-fill ${i % 2 ? "alt" : ""}" style="width:${Math.round((t.total / maxEmp) * 100)}%"></div></div>
-        <div class="bar-val">${t.total}</div>
-      </div>`
-    )
     .join("");
 
   const criteriaNames = [];
@@ -217,9 +257,16 @@ function renderOverview() {
       const cells = perMonth
         .map((p) => {
           const c = p.month.criteria.find((x) => x.name === cn);
-          const n = c ? c.entries.filter((e) => e.type !== "text").length : 0;
+          const entries = c ? c.entries.filter((e) => e.type !== "text") : [];
+          const n = entries.length;
           const cls = n === 0 ? "hm-0" : n <= 3 ? "hm-1" : n <= 6 ? "hm-2" : n <= 10 ? "hm-3" : n <= 15 ? "hm-4" : "hm-5";
-          return `<td><span class="hm-cell ${cls}">${n || "\u00b7"}</span></td>`;
+          const tipHtml = n
+            ? `<span class="tt-title">${esc(p.month.label)}</span>` +
+              entries
+                .map((e) => `<span class="tt-row">${esc(e.name)} <b>${esc(e.value)}${e.type === "count" ? "\u00d7" : ""}</b></span>`)
+                .join("")
+            : "";
+          return `<td><span class="hm-cell ${cls}${n ? " has-tip" : ""}" data-tip="${esc(tipHtml)}">${n || "\u00b7"}</span></td>`;
         })
         .join("");
       return `<tr><td class="crit">${esc(cn)}</td>${cells}</tr>`;
@@ -239,22 +286,14 @@ function renderOverview() {
       </div>
     </div>
 
-    <div class="ov-grid">
-      <div class="ov-section">
-        <h2>Most flagged employees</h2>
-        <p>Total late check-ins, partial attendance, early outs, etc. (count criteria).</p>
-        <div class="panel"><div class="bars">${empBars || '<span style="color:var(--muted)">No count flags yet.</span>'}</div></div>
-      </div>
-
-      <div class="ov-section">
-        <h2>Criteria activity</h2>
-        <p>Records flagged per criterion per month.</p>
-        <div class="panel heat-wrap">
-          <table class="heat">
-            <thead><tr>${heatHeaders}</tr></thead>
-            <tbody>${heatRows}</tbody>
-          </table>
-        </div>
+    <div class="ov-section">
+      <h2>Criteria activity</h2>
+      <p>Records flagged per criterion per month. Hover a count to see the members behind it.</p>
+      <div class="panel heat-wrap">
+        <table class="heat">
+          <thead><tr>${heatHeaders}</tr></thead>
+          <tbody>${heatRows}</tbody>
+        </table>
       </div>
     </div>`;
 }
@@ -314,8 +353,7 @@ function renderSearch() {
 
 /* ---------- Employee detail ---------- */
 
-function buildEmployeeBreakdown(key) {
-  const months = visibleMonths();
+function buildEmployeeBreakdown(key, months = visibleMonths()) {
   const emp = indexEmployees(months).find((e) => e.key === key);
   const displayName = emp ? emp.name : key;
 
@@ -498,93 +536,161 @@ function formatTotal(type, total) {
   return hoursToHMS(total);
 }
 
-function renderCriteriaTable() {
-  const months = visibleMonths();
-  const criteriaNames = [];
-  months.forEach((m) =>
+function perCriteriaMonths() {
+  const range = visibleMonths();
+  if (!range.length) return [];
+  const from = Math.max(0, Math.min(state.perFrom, range.length - 1));
+  const to = Math.max(from, Math.min(state.perTo, range.length - 1));
+  return range.slice(from, to + 1);
+}
+
+function criteriaOrder() {
+  const order = [];
+  MONTHS.forEach((m) =>
     m.criteria.forEach((c) => {
-      if (!criteriaNames.includes(c.name)) criteriaNames.push(c.name);
+      if (!order.includes(c.name)) order.push(c.name);
     })
   );
+  return order;
+}
 
-  const monthHeaders = months.map((m) => `<th>${esc(shortMonth(m))}</th>`).join("");
+function criteriaFilterBar() {
+  const range = visibleMonths();
+  const months = perCriteriaMonths();
 
-  const panels = [];
-  criteriaNames.forEach((cn) => {
-    const c0 = months.map((m) => m.criteria.find((x) => x.name === cn)).find(Boolean);
+  const fromI = Math.max(0, Math.min(state.perFrom, range.length - 1));
+  const toI = Math.max(fromI, Math.min(state.perTo, range.length - 1));
+  const monthOpts = range
+    .map((m, i) => `<option value="${i}"${i === fromI ? " selected" : ""}>${esc(m.label)}</option>`)
+    .join("");
+  const toOpts = range
+    .map((m, i) => `<option value="${i}"${i === toI ? " selected" : ""}>${esc(m.label)}</option>`)
+    .join("");
 
-    const agg = new Map();
+  const criteriaOpts = [`<option value="">All criteria</option>`] +
+    criteriaOrder()
+      .map((cn) => `<option value="${esc(cn)}"${state.perCriteria === cn ? " selected" : ""}>${esc(cn)}</option>`)
+      .join("");
+
+  const members = indexEmployees(months);
+  const memberOpts = [`<option value="">All members</option>`] +
+    members
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((e) => `<option value="${esc(normName(e.name))}"${state.perMember === normName(e.name) ? " selected" : ""}>${esc(e.name)}</option>`)
+      .join("");
+
+  return `<div class="filter-bar">
+    <label>From
+      <select id="crit-from">${monthOpts}</select>
+    </label>
+    <label>To
+      <select id="crit-to">${toOpts}</select>
+    </label>
+    <label>Criteria
+      <select id="crit-criteria">${criteriaOpts}</select>
+    </label>
+    <label>Member
+      <select id="crit-member">${memberOpts}</select>
+    </label>
+    <button class="btn small" id="crit-reset" type="button">Reset</button>
+  </div>`;
+}
+
+function renderCriteriaTable() {
+  const months = perCriteriaMonths();
+  const toolbar = criteriaFilterBar();
+
+  if (state.perMember) {
+    const b = buildEmployeeBreakdown(state.perMember, months);
+    const empty = !b.rows;
+    return `
+      <div class="ov-section">
+        ${toolbar}
+        <div class="detail-head">
+          <h2>${esc(b.displayName)}</h2>
+          <span class="emp-tag">month-wise data for all criteria</span>
+          <button class="btn small" id="crit-members-reset" type="button">&times; Show all members</button>
+        </div>
+        ${empty ? `<div class="no-match">No flagged data for this member in the selected month(s).</div>` : `
+        <div class="stats">${b.statCards}</div>
+        <div class="panel heat-wrap">
+          <table class="heat cmp-table">
+            <thead><tr><th>Criterion</th>${b.monthCells}</tr></thead>
+            <tbody>${b.rows}</tbody>
+          </table>
+        </div>`}
+      </div>`;
+  }
+
+  const groups = [];
+  criteriaOrder().forEach((cn) => {
+    if (state.perCriteria && cn !== state.perCriteria) return;
+    const members = [];
     months.forEach((m) => {
       const c = m.criteria.find((x) => x.name === cn);
       if (!c) return;
       c.entries.forEach((e) => {
         if (e.type === "text") return;
         const key = normName(e.name);
-        if (!agg.has(key)) agg.set(key, { key, name: e.name, type: e.type, total: 0, perMonth: new Map() });
-        const rec = agg.get(key);
+        let rec = members.find((mm) => mm.key === key);
+        if (!rec) {
+          rec = { key, name: e.name, type: e.type, total: 0, perMonth: new Map() };
+          members.push(rec);
+        }
         rec.total += e.num || 0;
         rec.perMonth.set(m.key, e);
         if (e.name.length > rec.name.length) rec.name = e.name;
       });
     });
+    if (!members.length) return;
+    members.sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    groups.push({ cn, members });
+  });
 
-    if (!agg.size) return;
+  if (!groups.length) {
+    return `
+      <div class="ov-section">
+        ${toolbar}
+        <div class="no-match">No data matches the selected filters.</div>
+      </div>`;
+  }
 
-    const members = [...agg.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-    const catTotal = members.reduce((s, mm) => s + mm.total, 0);
+  const monthHeaders = months.map((m) => `<th>${esc(shortMonth(m))}</th>`).join("");
 
-    const body = members
-      .map((mm, i) => {
-        const cells = months
-          .map((m) => {
-            const e = mm.perMonth.get(m.key);
-            if (!e) return `<td class="z">\u00b7</td>`;
-            const cls = e.type === "time" ? "val-time" : e.type === "percent" ? "val-percent" : "val-flag";
-            const suffix = e.type === "count" ? "\u00d7" : "";
-            return `<td><span class="val-cell ${cls}">${esc(e.value)}${suffix}</span></td>`;
-          })
-          .join("");
-        const badge = i === 0 ? `<span class="top-badge">top</span>` : "";
-        return `<tr class="${i === 0 ? "top-row" : ""}">
-          <td class="name-cell">${badge}<button class="name-link" data-view="${esc(mm.key)}">${esc(mm.name)}</button></td>
-          ${cells}<td class="total-cell">${formatTotal(mm.type, mm.total)}</td>
-        </tr>`;
-      })
-      .join("");
-
-    const resp = c0 && c0.responsibility ? `<span class="resp">${esc(c0.responsibility)}</span>` : "";
-    const link = c0 && c0.sheet && c0.sheet.startsWith("http")
-      ? `<a class="sheet-link" href="${esc(c0.sheet)}" target="_blank" rel="noopener">Open sheet \u2197</a>`
-      : "";
-    const meta = [resp, link].filter(Boolean).join('<span class="sep">\u00b7</span>');
-
-    panels.push({
-      total: catTotal,
-      html: `<div class="panel crit-panel">
-        <div class="crit-head">
-          <div class="crit-title">${esc(cn)}</div>
-          <div class="crit-meta">${meta}</div>
-        </div>
-        <div class="heat-wrap">
-          <table class="heat cmp-table">
-            <thead><tr><th>Member</th>${monthHeaders}<th>Total</th></tr></thead>
-            <tbody>${body}</tbody>
-          </table>
-        </div>
-      </div>`,
+  let rows = "";
+  groups.forEach((g) => {
+    rows += `<tr class="crit-group"><td colspan="${2 + months.length}">${esc(g.cn)}</td></tr>`;
+    g.members.forEach((mm, i) => {
+      const cells = months
+        .map((m) => {
+          const e = mm.perMonth.get(m.key);
+          if (!e) return `<td class="z">\u00b7</td>`;
+          const cls = e.type === "time" ? "val-time" : e.type === "percent" ? "val-percent" : "val-flag";
+          const suffix = e.type === "count" ? "\u00d7" : "";
+          return `<td><span class="val-cell ${cls}">${esc(e.value)}${suffix}</span></td>`;
+        })
+        .join("");
+      const badge = i === 0 ? `<span class="top-badge">top</span>` : "";
+      rows += `<tr class="${i === 0 ? "top-row" : ""}">
+        <td class="name-cell">${badge}<button class="name-link" data-view="${esc(mm.key)}">${esc(mm.name)}</button></td>
+        ${cells}<td class="total-cell">${formatTotal(mm.type, mm.total)}</td>
+      </tr>`;
     });
   });
 
-  const sections = panels
-    .sort((a, b) => b.total - a.total)
-    .map((p) => p.html)
-    .join("");
-
   return `
     <div class="ov-section">
-      <h2>All flagged members per criterion</h2>
-      <p>Every team member flagged on each criterion, with their values across the selected months. Categories and members are ordered from highest to lowest.</p>
-      ${sections || `<div class="no-match">No numeric flags in the selected range.</div>`}
+      ${toolbar}
+      <div class="ov-section-head">
+        <h2>All flagged members per criterion</h2>
+        <p>All months shown side by side by default. Categories follow the CSV order; within each, members run from highest to lowest. Use the filters to narrow by month, criteria, or a single member.</p>
+      </div>
+      <div class="panel heat-wrap">
+        <table class="heat cmp-table">
+          <thead><tr><th>Member</th>${monthHeaders}<th>Total</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     </div>`;
 }
 
@@ -639,6 +745,12 @@ function wireActions() {
     })
   );
 
+  main.querySelectorAll(".has-tip").forEach((cell) => {
+    cell.addEventListener("mouseover", () => showTip(cell));
+    cell.addEventListener("mousemove", () => showTip(cell));
+    cell.addEventListener("mouseout", hideTip);
+  });
+
   const go = main.querySelector("#go-compare");
   if (go) go.addEventListener("click", () => { state.tab = "compare"; render(); });
 
@@ -650,6 +762,38 @@ function wireActions() {
 
   const clearSearch = main.querySelector("#clear-search");
   if (clearSearch) clearSearch.addEventListener("click", () => { state.query = ""; state.tab = "overview"; renderTabs(); render(); });
+
+  const critFrom = main.querySelector("#crit-from");
+  if (critFrom) critFrom.addEventListener("change", () => {
+    const range = visibleMonths();
+    state.perFrom = Math.max(0, Math.min(+critFrom.value, range.length - 1));
+    if (state.perTo < state.perFrom) state.perTo = state.perFrom;
+    render();
+  });
+  const critTo = main.querySelector("#crit-to");
+  if (critTo) critTo.addEventListener("change", () => {
+    const range = visibleMonths();
+    state.perTo = Math.max(0, Math.min(+critTo.value, range.length - 1));
+    if (state.perFrom > state.perTo) state.perFrom = state.perTo;
+    render();
+  });
+  const critCriteria = main.querySelector("#crit-criteria");
+  if (critCriteria) critCriteria.addEventListener("change", () => { state.perCriteria = critCriteria.value; render(); });
+  const critMember = main.querySelector("#crit-member");
+  if (critMember) critMember.addEventListener("change", () => { state.perMember = critMember.value; render(); });
+  const critReset = main.querySelector("#crit-reset");
+  if (critReset) critReset.addEventListener("click", () => {
+    state.perFrom = 0;
+    state.perTo = MONTHS.length - 1;
+    state.perCriteria = "";
+    state.perMember = "";
+    render();
+  });
+  const critMembersReset = main.querySelector("#crit-members-reset");
+  if (critMembersReset) critMembersReset.addEventListener("click", () => {
+    state.perMember = "";
+    render();
+  });
 }
 
 function initControls() {

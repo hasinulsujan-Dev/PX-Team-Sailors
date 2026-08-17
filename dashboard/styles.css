@@ -169,6 +169,44 @@ table.heat .hm-cell {
 .hm-4 { background: #ef7a72; color: #fff; }
 .hm-5 { background: #d92d20; color: #fff; }
 
+/* Criteria activity hover tooltip */
+table.heat .hm-cell { cursor: default; }
+#ov-tip {
+  position: fixed;
+  z-index: 100;
+  max-width: 320px;
+  max-height: 62vh;
+  overflow: auto;
+  padding: 10px 12px;
+  background: #1c2433;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  text-align: left;
+  box-shadow: 0 10px 26px rgba(10, 14, 30, .3);
+  pointer-events: none;
+}
+#ov-tip[hidden] { display: none; }
+#ov-tip .tt-title {
+  display: block;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #aab4c8;
+  margin-bottom: 6px;
+}
+#ov-tip .tt-row {
+  display: block;
+  padding: 1px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#ov-tip .tt-row b { color: #ffd7a8; font-weight: 700; margin-left: 2px; }
+
 /* Trend */
 .trend-bars { display: flex; align-items: flex-end; gap: 18px; height: 160px; padding-top: 6px; }
 .trend-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; height: 100%; justify-content: flex-end; }
@@ -280,6 +318,33 @@ table.cmp-table .z { color: #b6bcc9; }
 
 .ov-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .no-match { padding: 30px; text-align: center; color: var(--muted); background: var(--panel); border: 1px dashed var(--line); border-radius: var(--radius); }
+
+/* ---------- Per-criteria filter bar ---------- */
+.filter-bar {
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px; box-shadow: var(--shadow); margin-bottom: 18px;
+}
+.filter-bar label {
+  display: flex; flex-direction: column; gap: 5px;
+  font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--muted);
+}
+.filter-bar select {
+  padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line);
+  background: #fbfcfe; color: var(--ink); font-size: 13px; cursor: pointer;
+  min-width: 150px; max-width: 320px;
+}
+.filter-bar select:focus { border-color: var(--accent); outline: none; }
+.filter-bar .btn { margin-left: auto; }
+
+.ov-section-head { margin: 4px 0 14px; }
+.ov-section-head h2 { font-size: 16px; font-weight: 700; margin-bottom: 3px; }
+.ov-section-head p { font-size: 13px; color: var(--muted); }
+
+table.heat tr.crit-group td {
+  background: #eef1f7; color: var(--ink); font-weight: 700; font-size: 12.5px;
+  padding: 8px 12px; text-align: left; border-top: 2px solid var(--line);
+}
 
 /* ---------- Per-criteria links ---------- */
 .name-link {
