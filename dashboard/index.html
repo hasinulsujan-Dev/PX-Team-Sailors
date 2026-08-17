@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PX Team · Sailor's Report Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark">PX</span>
+      <div>
+        <h1>Sailor's Report Dashboard</h1>
+        <p class="subtitle">PX Team · Monthly compliance flags</p>
+      </div>
+    </div>
+    <div class="topbar-controls">
+      <div class="search-wrap">
+        <input id="search" type="search" placeholder="Search employee…" autocomplete="off" spellcheck="false">
+        <button id="search-clear" class="search-clear" hidden>&times;</button>
+      </div>
+      <div class="range" title="Filter the dashboard to a range of months">
+        <select id="from-month" aria-label="From month"></select>
+        <span class="range-arrow">&rarr;</span>
+        <select id="to-month" aria-label="To month"></select>
+      </div>
+      <span class="generated-badge" id="generated-badge"></span>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs"></nav>
+
+<main id="content"></main>
+
+<div id="update-banner" class="update-banner" hidden>
+  <span class="update-pulse"></span>
+  <span>New report data detected in Docs/</span>
+  <button class="btn small primary" id="update-refresh">Refresh</button>
+</div>
+
+<footer class="foot">
+  Data source: <code>Docs/*.csv</code> · Run <code>ruby scripts/serve.rb</code> &mdash; new month CSVs are picked up automatically
+</footer>
+
+<script src="data/sailor-report.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
