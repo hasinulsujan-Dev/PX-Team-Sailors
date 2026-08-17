@@ -304,16 +304,18 @@ function renderSearch() {
         <h2>Search results</h2>
         <div class="count">${results.length} of ${employees.length} flagged employees match "${esc(state.query)}"</div>
       </div>
-      ${cta}
+      <div class="cmp-bar-cta">
+        <button class="btn small" id="clear-search" title="Clear search">&times; Clear</button>
+        ${cta}
+      </div>
     </div>
     ${list}`;
 }
 
 /* ---------- Employee detail ---------- */
 
-function renderEmployee() {
+function buildEmployeeBreakdown(key) {
   const months = visibleMonths();
-  const key = state.empKey;
   const emp = indexEmployees(months).find((e) => e.key === key);
   const displayName = emp ? emp.name : key;
 
@@ -360,18 +362,24 @@ function renderEmployee() {
     .map((r) => `<th>${esc(shortMonth(r.month))}</th>`)
     .join("");
 
+  return { displayName, emp, statCards, rows, monthCells };
+}
+
+function renderEmployee() {
+  const b = buildEmployeeBreakdown(state.empKey);
+
   return `
     <div class="detail-head">
       <button class="btn small" id="back-to-search">&larr; Back</button>
-      <h2>${esc(displayName)}</h2>
-      <span class="emp-tag">${emp ? `${emp.records} records across ${emp.criteria.size} criteria in range` : "no flags in range"}</span>
+      <h2>${esc(b.displayName)}</h2>
+      <span class="emp-tag">${b.emp ? `${b.emp.records} records across ${b.emp.criteria.size} criteria in range` : "no flags in range"}</span>
     </div>
-    <div class="stats">${statCards}</div>
+    <div class="stats">${b.statCards}</div>
     <div class="panel heat-wrap" style="margin-top:20px">
       <h3 style="margin-bottom:12px">Monthly breakdown by criterion</h3>
       <table class="heat cmp-table">
-        <thead><tr><th>Criterion</th>${monthCells}</tr></thead>
-        <tbody>${rows}</tbody>
+        <thead><tr><th>Criterion</th>${b.monthCells}</tr></thead>
+        <tbody>${b.rows}</tbody>
       </table>
     </div>`;
 }
@@ -639,11 +647,12 @@ function wireActions() {
 
   const clear = main.querySelector("#clear-compare");
   if (clear) clear.addEventListener("click", () => { state.selected = []; state.tab = "search"; render(); });
+
+  const clearSearch = main.querySelector("#clear-search");
+  if (clearSearch) clearSearch.addEventListener("click", () => { state.query = ""; state.tab = "overview"; renderTabs(); render(); });
 }
 
 function initControls() {
-  const search = document.getElementById("search");
-  const clearBtn = document.getElementById("search-clear");
   const fromSel = document.getElementById("from-month");
   const toSel = document.getElementById("to-month");
 
@@ -673,31 +682,200 @@ function initControls() {
   fromSel.addEventListener("change", applyRange);
   toSel.addEventListener("change", applyRange);
 
-  search.addEventListener("input", () => {
-    state.query = search.value.trim();
-    clearBtn.hidden = !state.query;
-    state.tab = state.query ? "search" : "overview";
-    renderTabs();
-    render();
-  });
-
-  clearBtn.addEventListener("click", () => {
-    state.query = "";
-    search.value = "";
-    clearBtn.hidden = true;
-    state.tab = "overview";
-    renderTabs();
-    render();
-  });
-
+  initModal();
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && state.query) {
       state.query = "";
-      search.value = "";
-      clearBtn.hidden = true;
       state.tab = "overview";
       renderTabs();
       render();
+    }
+  });
+}
+
+/* ---------- Search modal ---------- */
+
+const modal = {
+  query: "",
+  results: [],
+  hl: 0,
+  mode: "list",
+  empKey: null,
+};
+
+function modalEls() {
+  return {
+    backdrop: document.getElementById("search-modal"),
+    input: document.getElementById("modal-search"),
+    body: document.getElementById("modal-body"),
+    close: document.getElementById("modal-close"),
+    seeAll: document.getElementById("modal-see-all"),
+  };
+}
+
+function openModal() {
+  const els = modalEls();
+  modal.query = "";
+  modal.hl = 0;
+  modal.mode = "list";
+  modal.results = [];
+  els.input.value = "";
+  els.backdrop.hidden = false;
+  els.seeAll.hidden = true;
+  els.body.innerHTML = `<div class="modal-empty">Start typing a team member's name to see their month-wise data.</div>`;
+  els.input.focus();
+}
+
+function closeModal() {
+  modalEls().backdrop.hidden = true;
+}
+
+function renderModalList() {
+  const els = modalEls();
+  const q = normName(modal.query);
+  if (!q) {
+    modal.results = [];
+    els.body.innerHTML = `<div class="modal-empty">Start typing a team member's name to see their month-wise data.</div>`;
+    els.seeAll.hidden = true;
+    return;
+  }
+  const employees = indexEmployees(visibleMonths());
+  modal.results = employees
+    .filter((e) => normName(e.name).includes(q))
+    .slice(0, 12);
+  els.seeAll.hidden = false;
+
+  if (!modal.results.length) {
+    els.body.innerHTML = `<div class="modal-empty">No team members match "${esc(modal.query)}".</div>`;
+    return;
+  }
+
+  els.body.innerHTML = `<div class="emp-list">${modal.results
+    .map((e, i) => {
+      const key = normName(e.name);
+      const hot = e.records >= 10;
+      return `<div class="emp-row ${i === modal.hl ? "hl" : ""}" data-empkey="${esc(key)}">
+        <div style="min-width:0">
+          <div class="emp-name">${esc(e.name)}</div>
+          <div class="emp-meta">
+            <span class="emp-tag">${e.records} records</span>
+            <span class="emp-tag">${e.criteria.size} criteria</span>
+            <span class="emp-tag">${e.months.size} months</span>
+            ${hot ? `<span class="emp-tag hot">high volume</span>` : ""}
+          </div>
+        </div>
+        <div class="emp-spacer"></div>
+        <span class="emp-tag">month-wise data &rarr;</span>
+      </div>`;
+    })
+    .join("")}</div>`;
+
+  els.body.querySelectorAll("[data-empkey]").forEach((row, i) =>
+    row.addEventListener("click", () => showModalEmployee(row.dataset.empkey))
+  );
+}
+
+function showModalEmployee(key) {
+  const els = modalEls();
+  modal.mode = "emp";
+  modal.empKey = key;
+  const b = buildEmployeeBreakdown(key);
+  const noData = !b.rows;
+  els.seeAll.hidden = true;
+  els.body.innerHTML = `
+    <div class="modal-detail">
+      <div class="detail-head">
+        <button class="btn small" id="modal-back">&larr; Back to results</button>
+        <h2>${esc(b.displayName)}</h2>
+        <span class="emp-tag">${b.emp ? `${b.emp.records} records across ${b.emp.criteria.size} criteria` : "no flags in range"}</span>
+      </div>
+      ${noData ? `<div class="no-match">No flagged data in the selected month range.</div>` : `
+      <div class="stats">${b.statCards}</div>
+      <div class="heat-wrap">
+        <table class="heat cmp-table">
+          <thead><tr><th>Criterion</th>${b.monthCells}</tr></thead>
+          <tbody>${b.rows}</tbody>
+        </table>
+      </div>`}
+      <div class="modal-detail-actions">
+        <span></span>
+        <button class="btn small primary" id="modal-open-full">Open full view \u2197</button>
+      </div>
+    </div>`;
+  els.body.querySelector("#modal-back").addEventListener("click", () => {
+    modal.mode = "list";
+    renderModalList();
+  });
+  els.body.querySelector("#modal-open-full").addEventListener("click", () => {
+    state.query = "";
+    state.empKey = key;
+    state.tab = "employee";
+    closeModal();
+    renderTabs();
+    render();
+  });
+}
+
+function modalSearchToPage() {
+  const q = modal.query.trim();
+  state.query = q;
+  state.tab = q ? "search" : "overview";
+  closeModal();
+  renderTabs();
+  render();
+}
+
+function initModal() {
+  const els = modalEls();
+
+  document.getElementById("search-open").addEventListener("click", openModal);
+  els.close.addEventListener("click", closeModal);
+  els.seeAll.addEventListener("click", modalSearchToPage);
+  els.backdrop.addEventListener("click", (ev) => {
+    if (ev.target === els.backdrop) closeModal();
+  });
+
+  els.input.addEventListener("input", () => {
+    modal.query = els.input.value.trim();
+    modal.hl = 0;
+    modal.mode = "list";
+    renderModalList();
+  });
+
+  els.input.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      if (modal.mode === "list" && modal.results.length) {
+        modal.hl = (modal.hl + 1) % modal.results.length;
+        renderModalList();
+      }
+    } else if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (modal.mode === "list" && modal.results.length) {
+        modal.hl = (modal.hl - 1 + modal.results.length) % modal.results.length;
+        renderModalList();
+      }
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+      if (modal.mode === "list" && modal.results.length) {
+        const key = normName(modal.results[modal.hl].name);
+        showModalEmployee(key);
+      } else if (modal.mode === "emp") {
+        els.body.querySelector("#modal-open-full")?.click();
+      }
+    }
+  });
+
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && !modalEls().backdrop.hidden) closeModal();
+    if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === "k") {
+      ev.preventDefault();
+      openModal();
+    }
+    if (ev.key === "/" && !ev.metaKey && !ev.ctrlKey && !ev.altKey &&
+        !/INPUT|TEXTAREA|SELECT/.test(document.activeElement && document.activeElement.tagName || "")) {
+      ev.preventDefault();
+      openModal();
     }
   });
 }

@@ -17,10 +17,11 @@
       </div>
     </div>
     <div class="topbar-controls">
-      <div class="search-wrap">
-        <input id="search" type="search" placeholder="Search employee…" autocomplete="off" spellcheck="false">
-        <button id="search-clear" class="search-clear" hidden>&times;</button>
-      </div>
+      <button class="icon-btn" id="search-open" type="button" title="Search employee (Cmd/Ctrl+K)">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        Search
+        <kbd>K</kbd>
+      </button>
       <div class="range" title="Filter the dashboard to a range of months">
         <select id="from-month" aria-label="From month"></select>
         <span class="range-arrow">&rarr;</span>
@@ -39,6 +40,20 @@
   <span class="update-pulse"></span>
   <span>New report data detected in Docs/</span>
   <button class="btn small primary" id="update-refresh">Refresh</button>
+</div>
+
+<div id="search-modal" class="modal-backdrop" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Search team members">
+    <div class="modal-head">
+      <input id="modal-search" type="search" placeholder="Type a team member's name…" autocomplete="off" spellcheck="false">
+      <button class="modal-close" id="modal-close" type="button" title="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot">
+      <span class="modal-hint">&uarr;&darr; navigate &middot; Enter open &middot; Esc close</span>
+      <button class="btn small" id="modal-see-all" hidden>See all results in page</button>
+    </div>
+  </div>
 </div>
 
 <footer class="foot">
