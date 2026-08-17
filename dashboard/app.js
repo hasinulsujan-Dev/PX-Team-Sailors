@@ -224,23 +224,48 @@ function renderOverview() {
   const totals = perMonth.map((p) => p.flags.length);
   const maxBars = Math.max(...totals, 1);
 
-  const trend = perMonth
-    .map((p, i) => {
-      const h = Math.round((totals[i] / maxBars) * 100);
-      return `<div class="trend-col">
-        <div class="trend-val">${totals[i]}</div>
-        <div class="trend-track"><div class="trend-fill" style="height:${h}%"></div></div>
-        <div class="trend-label">${esc(shortMonth(p.month))}</div>
-      </div>`;
-    })
-    .join("");
-
   const criteriaNames = [];
   months.forEach((m) =>
     m.criteria.forEach((c) => {
       if (!criteriaNames.includes(c.name)) criteriaNames.push(c.name);
     })
   );
+
+  const CRIT_PALETTE = [
+    "#2f6bff", "#6941c6", "#d92d20", "#067647", "#b54708", "#175cd3",
+    "#c11574", "#027a48", "#7a5af8", "#ea8600", "#0ba5ec", "#ef4444",
+    "#12b76a", "#f79009", "#475467", "#9e77ed",
+  ];
+  const critColor = (cn) => CRIT_PALETTE[criteriaNames.indexOf(cn) % CRIT_PALETTE.length];
+
+  const trend = perMonth
+    .map((p) => {
+      const crits = criteriaNames
+        .map((cn) => {
+          const c = p.month.criteria.find((x) => x.name === cn);
+          const entries = c ? c.entries.filter((e) => e.type !== "text") : [];
+          return { cn, n: entries.length, entries };
+        })
+        .filter((x) => x.n > 0);
+      const total = p.flags.length;
+      const segs = crits
+        .map(({ cn, n, entries }) => {
+          const h = Math.round((n / Math.max(total, 1)) * 100);
+          const tip = `<span class="tt-title">${esc(p.month.label)} &middot; ${esc(cn)}</span>` +
+            `<span class="tt-row">${n} record${n === 1 ? "" : "s"}</span>` +
+            entries
+              .map((e) => `<span class="tt-row">${esc(e.name)} <b>${esc(e.value)}${e.type === "count" ? "\u00d7" : ""}</b></span>`)
+              .join("");
+          return `<div class="trend-seg has-tip" style="height:${h}%;background:${critColor(cn)}" title="${esc(cn)}" data-tip="${esc(tip)}"></div>`;
+        })
+        .join("");
+      return `<div class="trend-col">
+        <div class="trend-val">${total}</div>
+        <div class="trend-track"><div class="trend-stack">${segs || `<div class="trend-fill" style="height:0"></div>`}</div></div>
+        <div class="trend-label">${esc(shortMonth(p.month))}</div>
+      </div>`;
+    })
+    .join("");
 
   const criteriaTotals = criteriaNames
     .map((cn) => ({
@@ -251,6 +276,32 @@ function renderOverview() {
       }, 0),
     }))
     .sort((a, b) => b.total - a.total || a.cn.localeCompare(b.cn));
+
+  const legend = criteriaTotals
+    .map(({ cn, total }) => {
+      const dots = perMonth
+        .map((p) => {
+          const c = p.month.criteria.find((x) => x.name === cn);
+          const entries = c ? c.entries.filter((e) => e.type !== "text") : [];
+          const n = entries.length;
+          const tip = n
+            ? `<span class="tt-title">${esc(p.month.label)} &middot; ${esc(cn)}</span>` +
+              `<span class="tt-row">${n} record${n === 1 ? "" : "s"}</span>` +
+              entries
+                .map((e) => `<span class="tt-row">${esc(e.name)} <b>${esc(e.value)}${e.type === "count" ? "\u00d7" : ""}</b></span>`)
+                .join("")
+            : "";
+          return `<span class="mm-dot${n ? " has-tip" : ""}" style="background:${n ? critColor(cn) : "#e9ecf3"}" data-tip="${esc(tip)}" title="${esc(p.month.label)}${n ? ": " + n : ""}"></span>`;
+        })
+        .join("");
+      return `<div class="crit-item">
+        <i style="background:${critColor(cn)}"></i>
+        <span class="cn">${esc(cn)}</span>
+        <span class="mm-dots">${dots}</span>
+        <span class="ct">${total}</span>
+      </div>`;
+    })
+    .join("");
 
   const heatRows = criteriaTotals
     .map(({ cn }) => {
@@ -280,9 +331,16 @@ function renderOverview() {
   return `
     <div class="ov-section">
       <h2>Monthly trend</h2>
-      <p>Total flagged records per month.</p>
-      <div class="panel"><div class="trend-bars">${trend}</div>
-        <div class="ov-note">Showing ${months.length} of ${MONTHS.length} months. Use the range selector above to adjust.</div>
+      <p>Flagged records per month, stacked by criterion. Hover a segment to see the records behind that trend.</p>
+      <div class="panel trend-panel">
+        <div class="trend-body">
+          <div class="trend-bars">${trend}</div>
+          <div class="crit-legend">
+            <div class="legend-head">Criteria &middot; month dots</div>
+            ${legend}
+          </div>
+        </div>
+        <div class="ov-note">Showing ${months.length} of ${MONTHS.length} months. Hover a segment, bar or dot for details. Use the range selector above to adjust.</div>
       </div>
     </div>
 
